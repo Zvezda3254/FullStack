@@ -1,0 +1,21 @@
+{
+  "name": "tasks3.1-3.6",
+  "version": "1.0.0",
+  "description": "Tasks 3.1.-3.6.",
+  "keywords": [
+    "Tasks",
+    "3.1.-3.6."
+  ],
+  "license": "ISC",
+  "author": "",
+  "type": "commonjs",
+  "main": "index.js",
+  "scripts": {
+    "dev": "node --watch index.js",
+    "start": "node index.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "dependencies": {
+    "express": "^5.1.0"
+  }
+}
