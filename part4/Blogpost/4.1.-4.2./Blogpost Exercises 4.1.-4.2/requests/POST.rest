@@ -1,0 +1,10 @@
+POST http://localhost:3001/api/blogs
+Content-Type: application/json
+
+{
+  "title": "Lives",
+  "author": "JRedohn Bull",
+  "url": "http://www.redbull.com",
+  "likes": 8
+}
+
