@@ -1,0 +1,439 @@
+const { test, after, beforeEach,describe  } = require('node:test')
+const mongoose = require('mongoose')
+const supertest = require('supertest')
+const app = require('../app')
+const assert = require('node:assert')
+const Blog = require('../models/blog')
+const api = supertest(app)
+const helper = require('./test_helper')
+const bcrypt = require('bcrypt')
+const User = require('../models/user')
+
+beforeEach(async () => {
+  await Blog.deleteMany({})
+  await Blog.insertMany(helper.initialBlogs)
+})
+//4.8: Blog List Tests, step 1
+test('blogs are returned as json', async () => {
+  await api
+    .get('/api/blogs')
+    .expect(200)
+    .expect('Content-Type', /application\/json/)
+})
+
+test('all blogs are returned', async () => {
+  const response = await api.get('/api/blogs')
+  assert.strictEqual(response.body.length, helper.initialBlogs.length)//actual number of blogs in test database
+})
+
+
+test('a specific blog is within the returned blogs', async () => {
+  const response = await api.get('/api/blogs')
+
+  const titles = response.body.map(e => e.title)
+  assert(titles.includes('Live on Mars'))//title in test database
+})
+//4.10: Blog List Tests, step 3
+test('a valid blog can be added ', async () => {
+  const newBlog = {
+    title: 'Live on Earth',
+    author: 'Tommy Adds',
+    url: 'http://www.yellow.com',
+    likes: '1'
+
+  }
+
+  await api
+    .post('/api/blogs')
+    .send(newBlog)
+    .expect(201)
+    .expect('Content-Type', /application\/json/)
+
+  const blogsAtEnd = await helper.blogsInDb()
+  assert.strictEqual(blogsAtEnd.length, helper.initialBlogs.length + 1)
+  const titles = blogsAtEnd.map(n => n.title)
+  assert(titles.includes('Live on Earth'))
+})
+
+test('blog without title is not added', async () => {
+  const newBlog = {
+    author: 'John Smith'
+  }
+
+  await api
+    .post('/api/blogs')
+    .send(newBlog)
+    .expect(400)
+
+  const blogsAtEnd = await helper.blogsInDb()
+
+  assert.strictEqual(blogsAtEnd.length, helper.initialBlogs.length)
+})
+
+
+test('a specific blog can be viewed', async () => {
+  const blogsAtStart = await helper.blogsInDb()
+  const blogToView = blogsAtStart[0]
+
+  const resultBlog = await api
+    .get(`/api/blogs/${blogToView.id}`)
+    .expect(200)
+    .expect('Content-Type', /application\/json/)
+
+  assert.deepStrictEqual(resultBlog.body, blogToView)
+})
+
+//4.13 Blog List Expansions, step 1
+test('a blog can be deleted', async () => {
+  const blogsAtStart = await helper.blogsInDb()
+  const blogToDelete = blogsAtStart[0]
+
+  await api
+    .delete(`/api/blogs/${blogToDelete.id}`)
+    .expect(204)
+
+  const blogsAtEnd = await helper.blogsInDb()
+
+  const titles = blogsAtEnd.map(n => n.title)
+  assert(!titles.includes(blogToDelete.title))
+
+  assert.strictEqual(blogsAtEnd.length, helper.initialBlogs.length - 1)
+})
+
+//4.9: Blog List Tests, step 2
+test('unique identifier property is named id', async () => {
+  const response = await api.get('/api/blogs')
+  
+  assert(response.body[0].id, 'The object must have an id property')
+  assert.strictEqual(response.body[0]._id, undefined, 'The object must not have an _id property')
+})
+
+// 4.11: Blog List Tests, step 4 
+test('if likes is missing, it defaults to zero', async () => {
+  const newBlog = {
+    title: 'Blog',
+    author: 'User',
+    url: 'http://default.com',
+    
+  }
+
+  const response = await api
+    .post('/api/blogs')
+    .send(newBlog)
+    .expect(201)
+    .expect('Content-Type', /application\/json/)
+    
+  
+  assert.strictEqual(response.body.likes, 0)
+  const blogsAtEnd = await helper.blogsInDb()
+  assert.strictEqual(blogsAtEnd.length, helper.initialBlogs.length + 1)
+})
+
+
+// 4.12: Blog List tests, step 5 
+test('blog without title is not added (responds with 400)', async () => {
+  const newBlog = {
+    author: 'John Smith',
+    url: 'http://missing.com',
+    likes: 5
+    
+  }
+
+  await api
+    .post('/api/blogs')
+    .send(newBlog)
+    .expect(400) 
+  const blogsAtEnd = await helper.blogsInDb()
+  assert.strictEqual(blogsAtEnd.length, helper.initialBlogs.length)
+})
+
+// 4.12: Blog List tests, step 5 
+test('blog without url is not added (responds with 400)', async () => {
+  const newBlog = {
+    title: 'URL Test',
+    author: 'URL ',
+    likes: 5
+    
+  }
+
+  await api
+    .post('/api/blogs')
+    .send(newBlog)
+    .expect(400) 
+  const blogsAtEnd = await helper.blogsInDb()
+  assert.strictEqual(blogsAtEnd.length, helper.initialBlogs.length)
+})
+
+
+test('a blog post /likes/ can be updated successfully', async () => {
+  const blogsAtStart = await helper.blogsInDb()
+  const blogToUpdate = blogsAtStart[0]
+  const updatedLikes = blogToUpdate.likes + 20 
+
+  const newBlogData = { 
+    ...blogToUpdate, 
+    likes: updatedLikes 
+  }
+
+  const response = await api
+    .put(`/api/blogs/${blogToUpdate.id}`)
+    .send(newBlogData)
+    .expect(200)
+    .expect('Content-Type', /application\/json/)
+
+  
+  assert.strictEqual(response.body.likes, updatedLikes)
+  const blogsAtEnd = await helper.blogsInDb()
+  const updatedBlogInDb = blogsAtEnd.find(blog => blog.id === blogToUpdate.id)
+  assert.strictEqual(updatedBlogInDb.likes, updatedLikes)
+  assert.strictEqual(blogsAtEnd.length, helper.initialBlogs.length)
+})
+
+describe('when there is initially one user in db', () => {
+  beforeEach(async () => {
+    await User.deleteMany({})
+
+    const passwordHash = await bcrypt.hash('sekret', 10)
+    const user = new User({ username: 'root', passwordHash })
+
+    await user.save()
+  })
+
+  test('creation succeeds with a fresh username', async () => {
+    const usersAtStart = await helper.usersInDb()
+
+    const newUser = {
+      username: 'mluukkai',
+      name: 'Matti Luukkainen',
+      password: 'salainen',
+    }
+
+    await api
+      .post('/api/users')
+      .send(newUser)
+      .expect(201)
+      .expect('Content-Type', /application\/json/)
+
+    const usersAtEnd = await helper.usersInDb()
+    assert.strictEqual(usersAtEnd.length, usersAtStart.length + 1)
+
+    const usernames = usersAtEnd.map(u => u.username)
+    assert(usernames.includes(newUser.username))
+  })
+  test('creation fails with status 400 if username is missing', async () => {
+  const usersAtStart = await helper.usersInDb()
+
+  const newUser = {
+    name: 'Missing User',
+    password: 'securepassword',
+  }
+
+  await api
+    .post('/api/users')
+    .send(newUser)
+    .expect(400)
+
+  const usersAtEnd = await helper.usersInDb()
+  assert.strictEqual(usersAtEnd.length, usersAtStart.length)
+})
+test('creation fails with status 400 if username is less than 3 characters', async () => {
+  const usersAtStart = await helper.usersInDb()
+
+  const newUser = {
+    username: 'ab', // Only 2 characters
+    name: 'Shorty',
+    password: 'securepassword',
+  }
+
+  await api
+    .post('/api/users')
+    .send(newUser)
+    .expect(400)
+
+  const usersAtEnd = await helper.usersInDb()
+  assert.strictEqual(usersAtEnd.length, usersAtStart.length)
+})
+
+test('creation fails with status 400 if password is less than 3 characters or missing', async () => {
+  const usersAtStart = await helper.usersInDb()
+
+  // Test 1: Password too short
+  const shortPassUser = {
+    username: 'shortpass',
+    name: 'Short Pass',
+    password: 's', // Only 1 character
+  }
+  await api
+    .post('/api/users')
+    .send(shortPassUser)
+    .expect(400)
+
+  // Test 2: Password missing 
+  const missingPassUser = {
+    username: 'missingpass',
+    name: 'Missing Pass',
+  }
+  await api
+    .post('/api/users')
+    .send(missingPassUser)
+    .expect(400)
+
+  const usersAtEnd = await helper.usersInDb()
+  assert.strictEqual(usersAtEnd.length, usersAtStart.length)
+})
+
+
+})
+
+describe('when there is initially one user in db', () => {
+  // ...
+
+  test('creation fails with proper statuscode and message if username already taken', async () => {
+    const usersAtStart = await helper.usersInDb()
+
+    const newUser = {
+      username: 'root',
+      name: 'Superuser1',
+      password: 'salainen1',
+    }
+
+    const result = await api
+      .post('/api/users')
+      .send(newUser)
+      .expect(400)
+      .expect('Content-Type', /application\/json/)
+
+    const usersAtEnd = await helper.usersInDb()
+    assert(result.body.error.includes('expected `username` to be unique'))
+
+    assert.strictEqual(usersAtEnd.length, usersAtStart.length)
+  })
+})
+// ====================================================================
+// --- DELETE /api/blogs/:id Tests (Exercise 4.21) ---
+// ====================================================================
+describe('deletion of a blog (4.21 - secured)', () => {
+  let tokenA
+  let userAId
+  let tokenB
+  let blogIdA
+
+  before(async () => {
+    // Clear all users for a fresh test environment
+    await User.deleteMany({})
+
+    // 1. Create User A (The Creator)
+    const userA = { username: 'creatorUser', name: 'Creator A', password: 'passwordA' }
+    const userAResponse = await api.post('/api/users').send(userA).expect(201)
+    userAId = userAResponse.body.id
+
+    // Login User A to get a token
+    const loginAResponse = await api.post('/api/login').send({ username: 'creatorUser', password: 'passwordA' })
+    tokenA = loginAResponse.body.token
+
+    // 2. Create User B (The Unauthorized Deleter)
+    const userB = { username: 'unauthDel', name: 'Unauthorized B', password: 'passwordB' }
+    await api.post('/api/users').send(userB).expect(201)
+    
+    // Login User B to get a token
+    const loginBResponse = await api.post('/api/login').send({ username: 'unauthDel', password: 'passwordB' })
+    tokenB = loginBResponse.body.token
+  })
+
+  // We use beforeEach here to create a new blog for each deletion test
+  beforeEach(async () => {
+    // Ensure the initial blogs are loaded, but then wipe them for clean testing of User A's blog
+    await Blog.deleteMany({})
+    
+    // 3. Create a blog (Blog A) owned by User A to be the target of deletion
+    const blogA = { title: 'Auth Blog', author: 'A. Test', url: 'http://secure.com/blog', likes: 5 }
+
+    const creationResponse = await api
+      .post('/api/blogs')
+      .set('Authorization', `Bearer ${tokenA}`)
+      .send(blogA)
+      .expect(201)
+      
+    blogIdA = creationResponse.body.id
+  })
+
+
+  test('succeeds with status 204 if ID is valid and token belongs to creator', async () => {
+    const blogsAtStart = await helper.blogsInDb()
+
+    // Delete the blog using the CREATOR's token (User A)
+    await api
+      .delete(`/api/blogs/${blogIdA}`)
+      .set('Authorization', `Bearer ${tokenA}`)
+      .expect(204)
+
+    // Verify blog count decreased
+    const blogsAtEnd = await helper.blogsInDb()
+    assert.strictEqual(blogsAtEnd.length, blogsAtStart.length - 1)
+
+    // Verify the blog is gone
+    const ids = blogsAtEnd.map(r => r.id)
+    assert(!ids.includes(blogIdA), 'Blog ID should not exist after deletion')
+
+    // Verify the blog ID was removed from the user's blogs array (Cleanup check)
+    const creator = await User.findById(userAId)
+    assert(!creator.blogs.map(b => b.toString()).includes(blogIdA), 'Blog ID must be removed from creator\'s list')
+  })
+
+  test('fails with status 401 if token is missing', async () => {
+    const blogsAtStart = await helper.blogsInDb()
+
+    // Attempt to delete WITHOUT a token
+    const result = await api
+      .delete(`/api/blogs/${blogIdA}`)
+      .expect(401)
+      .expect('Content-Type', /application\/json/)
+
+    assert.strictEqual(result.body.error, 'token missing', 'Error message should indicate missing token')
+
+    // Verify blog count did NOT decrease
+    const blogsAtEnd = await helper.blogsInDb()
+    assert.strictEqual(blogsAtEnd.length, blogsAtStart.length, 'Blog count should be unchanged')
+  })
+
+  test('fails with status 401 if token belongs to another user (unauthorized)', async () => {
+    const blogsAtStart = await helper.blogsInDb()
+
+    // Attempt to delete with an UNAUTHORIZED user's token (User B)
+    const result = await api
+      .delete(`/api/blogs/${blogIdA}`)
+      .set('Authorization', `Bearer ${tokenB}`)
+      .expect(401)
+      .expect('Content-Type', /application\/json/)
+
+    assert.strictEqual(result.body.error, 'only the creator can delete this blog', 'Error message should indicate authorization failure')
+
+    // Verify blog count did NOT decrease
+    const blogsAtEnd = await helper.blogsInDb()
+    assert.strictEqual(blogsAtEnd.length, blogsAtStart.length, 'Blog count should be unchanged')
+  })
+
+})
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+after(async () => {
+  await mongoose.connection.close()
+})

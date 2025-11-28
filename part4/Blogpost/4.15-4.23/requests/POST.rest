@@ -1,0 +1,10 @@
+POST http://localhost:3001/api/blogs
+Content-Type: application/json
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VybmFtZSI6Inp2ZXpkYSIsImlkIjoiNjkyOTYxZmFjZDQ1OGJlMjA3ZDkzODgxIiwiaWF0IjoxNzY0MzIxNTY4LCJleHAiOjE3NjQzMjUxNjh9.Xj8ebBnaCIynl7s78WjXSf4N8-aabwXEAvASGBPPNJI
+
+{
+    "title": "Authentication Finalized",
+    "author": "Zvezda",
+    "url": "http://zvezdablogs.com/secure",
+    "likes": 100
+}
